@@ -7,10 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 const (
-	env_filename = ".env"
+	env_filename           = ".env"
+	defaultErrorExitStatus = 1
 )
 
 func parseLine(r *bufio.Reader) (string, string, error) {
@@ -85,8 +87,19 @@ func run(name string, args []string) error {
 	return execute(name, args)
 }
 
+func exitStatus(err error) int {
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+			return status.ExitStatus()
+		}
+	}
+	return defaultErrorExitStatus
+}
+
 func main() {
 	if err := run(os.Args[1], os.Args[2:]); err != nil {
-		panic(err)
+		status := exitStatus(err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(status)
 	}
 }
