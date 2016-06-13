@@ -63,17 +63,7 @@ func setEnvFromFile(path string) error {
 
 func execute(name string, args []string) error {
 	cmd := exec.Command(name, args...)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	go func() {
-		defer stdin.Close()
-		_, err := io.Copy(stdin, os.Stdin)
-		if err != nil {
-			panic(err)
-		}
-	}()
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
