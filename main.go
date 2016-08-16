@@ -21,6 +21,9 @@ func parseLine(r *bufio.Reader) (string, string, error) {
 		return "", "", err
 	}
 	line = strings.TrimSpace(line)
+	if len(line) == 0 {
+		return "", "", nil
+	}
 	if line[0] == '#' {
 		return "", "", nil
 	}
