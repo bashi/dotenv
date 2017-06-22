@@ -1,4 +1,4 @@
-package main
+package dotenv
 
 import (
 	"bufio"
@@ -15,8 +15,17 @@ const (
 	defaultErrorExitStatus = 1
 )
 
-func parseLine(r *bufio.Reader) (string, string, error) {
-	line, err := r.ReadString('\n')
+func parseLine(line string) (string, string, error) {
+	fields := strings.SplitN(line, "=", 2)
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("Failed to parse line: %s", line)
+	}
+	return fields[0], fields[1], nil
+}
+
+func parseLines(r io.Reader) (string, string, error) {
+	br := bufio.NewReader(r)
+	line, err := br.ReadString('\n')
 	if err != nil {
 		return "", "", err
 	}
@@ -27,17 +36,12 @@ func parseLine(r *bufio.Reader) (string, string, error) {
 	if line[0] == '#' {
 		return "", "", nil
 	}
-	fields := strings.SplitN(line, "=", 2)
-	if len(fields) != 2 {
-		return "", "", fmt.Errorf("Failed to parse line: %s", line)
-	}
-	return fields[0], fields[1], nil
+	return parseLine(line)
 }
 
 func setEnvFromReader(r io.Reader) error {
-	br := bufio.NewReader(r)
 	for {
-		key, value, err := parseLine(br)
+		key, value, err := parseLines(r)
 		if err == io.EOF {
 			break
 		}
@@ -64,35 +68,30 @@ func setEnvFromFile(path string) error {
 	return setEnvFromReader(file)
 }
 
-func execute(name string, args []string) error {
-	cmd := exec.Command(name, args...)
+func execute(command string, args []string) error {
+	cmd := exec.Command(command, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func run(name string, args []string) error {
+// Run runs the given command with environment variables defined in .env file
+// located in the current directory.
+func Run(command string, args []string) error {
 	err := setEnvFromFile(envFile)
 	if err != nil {
 		return err
 	}
-	return execute(name, args)
+	return execute(command, args)
 }
 
-func exitStatus(err error) int {
+// ExitStatus returns an int value correspond to the given err, defaults to 1.
+func ExitStatus(err error) int {
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 			return status.ExitStatus()
 		}
 	}
 	return defaultErrorExitStatus
-}
-
-func main() {
-	if err := run(os.Args[1], os.Args[2:]); err != nil {
-		status := exitStatus(err)
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(status)
-	}
 }
