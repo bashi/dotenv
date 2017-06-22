@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	env_filename           = ".env"
+	envFile                = ".env"
 	defaultErrorExitStatus = 1
 )
 
@@ -27,7 +27,7 @@ func parseLine(r *bufio.Reader) (string, string, error) {
 	if line[0] == '#' {
 		return "", "", nil
 	}
-	fields := strings.Split(line, "=")
+	fields := strings.SplitN(line, "=", 2)
 	if len(fields) != 2 {
 		return "", "", fmt.Errorf("Failed to parse line: %s", line)
 	}
@@ -73,7 +73,7 @@ func execute(name string, args []string) error {
 }
 
 func run(name string, args []string) error {
-	err := setEnvFromFile(env_filename)
+	err := setEnvFromFile(envFile)
 	if err != nil {
 		return err
 	}
