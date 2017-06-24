@@ -16,19 +16,7 @@ const (
 	defaultErrorExitStatus = 1
 )
 
-func parseLine(line string) (string, string, error) {
-	fields := strings.SplitN(line, "=", 2)
-	if len(fields) != 2 {
-		return "", "", fmt.Errorf("Failed to parse line: %s", line)
-	}
-	return fields[0], fields[1], nil
-}
-
-func parseLines(r *bufio.Reader) (string, string, error) {
-	line, err := r.ReadString('\n')
-	if err != nil {
-		return "", "", err
-	}
+func parseLine(line string, prefix string) (string, string, error) {
 	line = strings.TrimSpace(line)
 	if len(line) == 0 {
 		return "", "", nil
@@ -36,26 +24,37 @@ func parseLines(r *bufio.Reader) (string, string, error) {
 	if line[0] == '#' {
 		return "", "", nil
 	}
-	return parseLine(line)
+	fields := strings.SplitN(line, "=", 2)
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("Failed to parse line: %s", line)
+	}
+
+	key := fields[0]
+	value := fields[1]
+	// Quick hack: Treat |value| as a relative path when it starts with
+	// "./" or "../"
+	if strings.HasPrefix(value, "./") || strings.HasPrefix(value, "../") {
+		value = path.Clean(prefix + value)
+	}
+	// TODO: Don't expand when a value is enclosed by single quotes.
+	value = os.ExpandEnv(value)
+	return key, value, nil
 }
 
 func setEnvFromReader(r io.Reader, prefix string) error {
 	br := bufio.NewReader(r)
 	for {
-		key, value, err := parseLines(br)
-		if err == io.EOF {
-			break
+		line, err := br.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
 		}
+		key, value, err := parseLine(line, prefix)
 		if err != nil {
 			return err
 		}
-		// Quick hack: Treat |value| as a relative path when it starts with
-		// "./" or "../"
-		if strings.HasPrefix(value, "./") || strings.HasPrefix(value, "../") {
-			value = path.Clean(prefix + value)
-		}
-		// TODO: Don't expand when a value is enclosed by single quotes.
-		value = os.ExpandEnv(value)
 		os.Setenv(key, value)
 	}
 	return nil
