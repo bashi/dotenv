@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"syscall"
 )
@@ -23,9 +24,8 @@ func parseLine(line string) (string, string, error) {
 	return fields[0], fields[1], nil
 }
 
-func parseLines(r io.Reader) (string, string, error) {
-	br := bufio.NewReader(r)
-	line, err := br.ReadString('\n')
+func parseLines(r *bufio.Reader) (string, string, error) {
+	line, err := r.ReadString('\n')
 	if err != nil {
 		return "", "", err
 	}
@@ -39,14 +39,20 @@ func parseLines(r io.Reader) (string, string, error) {
 	return parseLine(line)
 }
 
-func setEnvFromReader(r io.Reader) error {
+func setEnvFromReader(r io.Reader, prefix string) error {
+	br := bufio.NewReader(r)
 	for {
-		key, value, err := parseLines(r)
+		key, value, err := parseLines(br)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return err
+		}
+		// Quick hack: Treat |value| as a relative path when it starts with
+		// "./" or "../"
+		if strings.HasPrefix(value, "./") || strings.HasPrefix(value, "../") {
+			value = path.Clean(prefix + value)
 		}
 		// TODO: Don't expand when a value is enclosed by single quotes.
 		value = os.ExpandEnv(value)
@@ -55,17 +61,13 @@ func setEnvFromReader(r io.Reader) error {
 	return nil
 }
 
-func setEnvFromFile(path string) error {
+func setEnvFromFile(path string, prefix string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		// Nop when the given path doesn't exist.
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return err
 	}
 	defer file.Close()
-	return setEnvFromReader(file)
+	return setEnvFromReader(file, prefix)
 }
 
 func execute(command string, args []string) error {
@@ -76,10 +78,35 @@ func execute(command string, args []string) error {
 	return cmd.Run()
 }
 
+func findEnvFilePath() (string, string, error) {
+	dirname, err := os.Getwd()
+	if err != nil {
+		return "", "", err
+	}
+	prefix := ""
+	for {
+		cur := path.Join(dirname, envFile)
+		if _, err := os.Stat(cur); err == nil {
+			return cur, prefix, nil
+		}
+		i := strings.LastIndex(dirname, "/")
+		if i < 0 {
+			break
+		}
+		dirname = dirname[:i]
+		prefix = prefix + "../"
+	}
+	return "", "", fmt.Errorf("Cannot find %s file", envFile)
+}
+
 // Run runs the given command with environment variables defined in .env file
 // located in the current directory.
 func Run(command string, args []string) error {
-	err := setEnvFromFile(envFile)
+	pathname, prefix, err := findEnvFilePath()
+	if err != nil {
+		return err
+	}
+	err = setEnvFromFile(pathname, prefix)
 	if err != nil {
 		return err
 	}
